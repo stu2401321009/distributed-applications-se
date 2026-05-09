@@ -1,0 +1,1708 @@
+openapi: 3.0.3
+info:
+  title: Система за резервация на учебни зали
+  description: |
+    RESTful API за управление на резервации на учебни зали в университет.
+
+    Системата позволява на студенти и преподаватели да резервират учебни зали
+    за определен ден и час. Администраторът управлява залите, потребителите
+    и статусите на резервациите.
+
+    ## Роли
+    - **Student** — може да разглежда зали и да прави резервации
+    - **Teacher** — може да разглежда зали и да прави резервации
+    - **Admin** — пълен достъп до всички операции
+
+    ## Автентикация
+    Всички endpoints (с изключение на `/api/auth/login` и `/api/auth/register`)
+    изискват **JWT Bearer token** в заглавката `Authorization: Bearer {token}`.
+
+    ## Обработка на грешки
+    API-то използва стандарта **RFC 7807 (Problem Details)** за всички грешки.
+    Сървърни грешки (stack traces) никога не се връщат директно към клиента.
+
+    ## Асинхронност
+    Всички операции с базата данни са имплементирани асинхронно (`async/await`).
+
+  version: 1.0.0
+  contact:
+    name: Курсова работа — Разпределени приложения
+
+servers:
+  - url: https://localhost:7001
+    description: Локален сървър за разработка
+
+tags:
+  - name: Auth
+    description: Регистрация и вход в системата
+  - name: Users
+    description: Управление на потребители
+  - name: Rooms
+    description: Управление на учебни зали
+  - name: Reservations
+    description: Управление на резервации
+
+# ==============================================================
+# PATHS
+# ==============================================================
+paths:
+  # -----------------------------------
+  # AUTH
+  # -----------------------------------
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Регистрация на нов потребител
+      description: |
+        Създава нов акаунт с роля **Student** или **Teacher**.
+        Ролята **Admin** не може да се регистрира по този endpoint.
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              firstName: Иван
+              lastName: Иванов
+              email: ivan.ivanov@uni.bg
+              password: "P@ssw0rd123"
+              role: Student
+              facultyNumber: "MI2024123"
+              phoneNumber: "+359 88 123 4567"
+      responses:
+        "201":
+          description: Потребителят е регистриран успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Email адресът вече е регистриран в системата
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                type: "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                title: "Конфликт"
+                status: 409
+                detail: "Потребител с email 'ivan.ivanov@uni.bg' вече съществува."
+                instance: "/api/auth/register"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход в системата
+      description: |
+        Автентикира потребителя и връща **JWT Bearer token**.
+        Токенът важи 24 часа.
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: ivan.ivanov@uni.bg
+              password: "P@ssw0rd123"
+      responses:
+        "200":
+          description: Успешен вход — връща JWT токен и данни за потребителя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Грешен email или парола
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                type: "https://tools.ietf.org/html/rfc7235#section-3.1"
+                title: "Неуспешна автентикация"
+                status: 401
+                detail: "Грешен email адрес или парола."
+                instance: "/api/auth/login"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # -----------------------------------
+  # USERS
+  # -----------------------------------
+  /api/users:
+    get:
+      tags: [Users]
+      summary: Списък с потребители
+      description: |
+        Връща **пагиниран и сортиран** списък с всички потребители.
+
+        **Достъп:** само Administrator.
+
+        **Филтриране:** по `firstName` и/или `lastName` (частично съвпадение, нечувствително към главни/малки букви).
+      operationId: getUsers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortByParam"
+        - $ref: "#/components/parameters/SortOrderParam"
+        - name: firstName
+          in: query
+          description: Филтриране по собствено име (частично съвпадение)
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+          example: "Иван"
+        - name: lastName
+          in: query
+          description: Филтриране по фамилно име (частично съвпадение)
+          required: false
+          schema:
+            type: string
+            maxLength: 50
+          example: "Иванов"
+        - name: role
+          in: query
+          description: Филтриране по роля на потребителя
+          required: false
+          schema:
+            $ref: "#/components/schemas/UserRole"
+      responses:
+        "200":
+          description: Успешно извлечен списък с потребители
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedUsersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      tags: [Users]
+      summary: Създаване на потребител от администратор
+      description: |
+        Създава нов потребителски акаунт (включително с роля Admin).
+
+        **Достъп:** само Administrator.
+      operationId: createUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+            example:
+              firstName: Мария
+              lastName: Петрова
+              email: maria.petrova@uni.bg
+              password: "Admin@2026"
+              role: Teacher
+              facultyNumber: null
+              phoneNumber: "+359 89 765 4321"
+      responses:
+        "201":
+          description: Потребителят е създаден успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Email адресът вече съществува
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/users/me:
+    get:
+      tags: [Users]
+      summary: Собствен профил
+      description: |
+        Връща профила на текущо влезлия потребител.
+
+        **Достъп:** всички автентикирани потребители.
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Профилът е извлечен успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/users/{id}:
+    get:
+      tags: [Users]
+      summary: Детайли за потребител
+      description: |
+        Връща детайлна информация за конкретен потребител.
+
+        **Достъп:** Administrator или собственикът на акаунта.
+      operationId: getUserById
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Потребителят е намерен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      tags: [Users]
+      summary: Редактиране на потребител
+      description: |
+        Обновява данните на съществуващ потребител.
+        Не позволява промяна на email или парола по този endpoint.
+
+        **Достъп:** само Administrator.
+      operationId: updateUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Потребителят е обновен успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags: [Users]
+      summary: Деактивиране на потребител
+      description: |
+        Деактивира потребителски акаунт (**soft delete** — `isActive = false`).
+        Записите в базата данни не се изтриват физически.
+
+        **Достъп:** само Administrator.
+      operationId: deleteUser
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Потребителят е деактивиран успешно
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # -----------------------------------
+  # ROOMS
+  # -----------------------------------
+  /api/rooms:
+    get:
+      tags: [Rooms]
+      summary: Списък с учебни зали
+      description: |
+        Връща **пагиниран и сортиран** списък с учебни зали.
+
+        **Достъп:** всички автентикирани потребители.
+
+        **Филтриране:** по `building` (сграда) и/или `roomType` (тип на залата).
+
+        По подразбиране се показват само активни зали (`isActive = true`).
+      operationId: getRooms
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortByParam"
+        - $ref: "#/components/parameters/SortOrderParam"
+        - name: building
+          in: query
+          description: Филтриране по сграда/корпус (частично съвпадение)
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+          example: "Корпус А"
+        - name: roomType
+          in: query
+          description: Филтриране по тип на залата
+          required: false
+          schema:
+            $ref: "#/components/schemas/RoomType"
+      responses:
+        "200":
+          description: Успешно извлечен списък с учебни зали
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedRoomsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      tags: [Rooms]
+      summary: Добавяне на учебна зала
+      description: |
+        Създава нова учебна зала в системата.
+
+        **Достъп:** само Administrator.
+      operationId: createRoom
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoomRequest"
+            example:
+              name: "А201"
+              building: "Корпус А"
+              floor: 2
+              capacity: 120
+              roomType: Lecture
+              hasProjector: true
+              description: "Голяма аудитория с климатик и бяла дъска"
+      responses:
+        "201":
+          description: Учебната зала е добавена успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/rooms/available:
+    get:
+      tags: [Rooms]
+      summary: Налични зали за определен период (бонус)
+      description: |
+        Връща списък с учебни зали, които **нямат одобрени резервации**
+        в посочения времеви диапазон.
+
+        Може допълнително да се филтрира по минимален капацитет.
+
+        **Достъп:** всички автентикирани потребители.
+      operationId: getAvailableRooms
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          description: Датата, за която се търси зала (формат `YYYY-MM-DD`)
+          schema:
+            type: string
+            format: date
+          example: "2026-06-15"
+        - name: startTime
+          in: query
+          required: true
+          description: Начален час (формат `HH:mm`)
+          schema:
+            type: string
+            pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          example: "09:00"
+        - name: endTime
+          in: query
+          required: true
+          description: Краен час (формат `HH:mm`), трябва да е след `startTime`
+          schema:
+            type: string
+            pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          example: "11:00"
+        - name: minCapacity
+          in: query
+          required: false
+          description: Минимален капацитет на залата
+          schema:
+            type: integer
+            minimum: 1
+          example: 30
+      responses:
+        "200":
+          description: Списък с налични зали за посочения период
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoomResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/rooms/{id}:
+    get:
+      tags: [Rooms]
+      summary: Детайли за учебна зала
+      description: |
+        Връща подробна информация за конкретна учебна зала.
+
+        **Достъп:** всички автентикирани потребители.
+      operationId: getRoomById
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Залата е намерена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      tags: [Rooms]
+      summary: Редактиране на учебна зала
+      description: |
+        Обновява данните на съществуваща учебна зала.
+
+        **Достъп:** само Administrator.
+      operationId: updateRoom
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoomRequest"
+      responses:
+        "200":
+          description: Залата е обновена успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags: [Rooms]
+      summary: Деактивиране на учебна зала
+      description: |
+        Деактивира учебна зала (**soft delete** — `isActive = false`).
+        Зали с активни (Pending или Approved) резервации не могат да бъдат деактивирани.
+
+        **Достъп:** само Administrator.
+      operationId: deleteRoom
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Залата е деактивирана успешно
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Залата има активни резервации и не може да бъде деактивирана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                type: "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                title: "Конфликт"
+                status: 409
+                detail: "Залата има 3 активни резервации. Отменете ги преди деактивиране."
+                instance: "/api/rooms/3"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  # -----------------------------------
+  # RESERVATIONS
+  # -----------------------------------
+  /api/reservations:
+    get:
+      tags: [Reservations]
+      summary: Списък с резервации
+      description: |
+        Връща **пагиниран и сортиран** списък с резервации.
+
+        **Достъп и видимост:**
+        - **Administrator** вижда всички резервации
+        - **Student / Teacher** виждат само своите резервации
+
+        **Филтриране:** по `startDate` (начална дата) и/или `status` (статус на резервацията).
+      operationId: getReservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortByParam"
+        - $ref: "#/components/parameters/SortOrderParam"
+        - name: startDate
+          in: query
+          description: Филтриране по начална дата — показва резервации от тази дата нататък
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2026-06-01"
+        - name: status
+          in: query
+          description: Филтриране по статус на резервацията
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReservationStatus"
+      responses:
+        "200":
+          description: Успешно извлечен списък с резервации
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedReservationsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      tags: [Reservations]
+      summary: Създаване на резервация
+      description: |
+        Създава нова заявка за резервация на учебна зала.
+
+        Системата автоматично проверява дали залата е свободна за посочения период.
+        Резервацията се създава със статус **Pending** и изчаква одобрение от администратор.
+
+        **Валидации:**
+        - `startTime` трябва да е в бъдещето
+        - `endTime` трябва да е след `startTime`
+        - `attendeeCount` не може да надвишава капацитета на залата
+        - Залата не трябва да е вече резервирана за същия период
+
+        **Достъп:** всички автентикирани потребители.
+      operationId: createReservation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReservationRequest"
+            example:
+              roomId: 3
+              startTime: "2026-06-15T09:00:00"
+              endTime: "2026-06-15T11:00:00"
+              purpose: "Групова работа по проект Разпределени Приложения"
+              attendeeCount: 25
+              notes: "Нуждаем се от проектор"
+      responses:
+        "201":
+          description: Резервацията е създадена успешно (статус Pending)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Учебната зала не е намерена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Залата вече е резервирана за посочения период
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+              example:
+                type: "https://tools.ietf.org/html/rfc7231#section-6.5.8"
+                title: "Конфликт"
+                status: 409
+                detail: "Зала А201 вече има одобрена резервация от 09:00 до 11:00 на 15.06.2026."
+                instance: "/api/reservations"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/reservations/my:
+    get:
+      tags: [Reservations]
+      summary: Моите резервации
+      description: |
+        Връща **пагиниран** списък с резервациите само на текущо влезлия потребител.
+
+        **Филтриране:** по `startDate` и/или `status`.
+
+        **Достъп:** всички автентикирани потребители.
+      operationId: getMyReservations
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortByParam"
+        - $ref: "#/components/parameters/SortOrderParam"
+        - name: startDate
+          in: query
+          description: Филтриране по начална дата
+          required: false
+          schema:
+            type: string
+            format: date
+          example: "2026-06-01"
+        - name: status
+          in: query
+          description: Филтриране по статус
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReservationStatus"
+      responses:
+        "200":
+          description: Успешно извлечен списък с резервации
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedReservationsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/reservations/{id}:
+    get:
+      tags: [Reservations]
+      summary: Детайли за резервация
+      description: |
+        Връща подробна информация за конкретна резервация.
+
+        **Достъп:** Administrator или собственикът на резервацията.
+      operationId: getReservationById
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Резервацията е намерена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    put:
+      tags: [Reservations]
+      summary: Редактиране на резервация
+      description: |
+        Позволява промяна на данните по резервация.
+
+        **Ограничение:** може да се редактира само резервация в статус **Pending**.
+        При промяна на времето системата отново проверява дали залата е свободна.
+
+        **Достъп:** собственикът на резервацията или Administrator.
+      operationId: updateReservation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReservationRequest"
+      responses:
+        "200":
+          description: Резервацията е обновена успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Залата вече е резервирана за новия период
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags: [Reservations]
+      summary: Отмяна на резервация
+      description: |
+        Отменя резервация (`status = Cancelled`).
+
+        **Ограничение:** може да се отмени само резервация в статус **Pending** или **Approved**.
+
+        **Достъп:** собственикът на резервацията или Administrator.
+      operationId: cancelReservation
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Резервацията е отменена успешно
+        "400":
+          description: Резервацията не може да бъде отменена (вече е приключила или отхвърлена)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/reservations/{id}/status:
+    patch:
+      tags: [Reservations]
+      summary: Одобряване или отхвърляне на резервация (бонус)
+      description: |
+        Позволява на администратора да одобри или отхвърли резервация.
+
+        **Ограничение:** може да се промени само резервация в статус **Pending**.
+
+        **Достъп:** само Administrator.
+      operationId: updateReservationStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReservationStatusRequest"
+            example:
+              status: Approved
+              notes: "Одобрено. Моля, освободете залата навреме."
+      responses:
+        "200":
+          description: Статусът е обновен успешно
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+# ==============================================================
+# COMPONENTS
+# ==============================================================
+components:
+  # -----------------------------------
+  # Security
+  # -----------------------------------
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT токен, получен от `/api/auth/login`.
+        Добавете го в заглавката: `Authorization: Bearer {token}`
+
+  # -----------------------------------
+  # Reusable Parameters
+  # -----------------------------------
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      description: Уникален идентификатор на ресурса
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+      example: 1
+
+    PageParam:
+      name: page
+      in: query
+      required: false
+      description: Номер на страницата (започва от 1)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PageSizeParam:
+      name: pageSize
+      in: query
+      required: false
+      description: Брой елементи на страница
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+    SortByParam:
+      name: sortBy
+      in: query
+      required: false
+      description: Поле, по което се сортират резултатите (напр. `name`, `createdAt`)
+      schema:
+        type: string
+      example: "createdAt"
+
+    SortOrderParam:
+      name: sortOrder
+      in: query
+      required: false
+      description: Посока на сортиране
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+
+  # -----------------------------------
+  # Reusable Responses
+  # -----------------------------------
+  responses:
+    BadRequest:
+      description: Невалидни входни данни
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: "https://tools.ietf.org/html/rfc7231#section-6.5.1"
+            title: "Невалидни данни"
+            status: 400
+            detail: "Един или повече полета съдържат невалидни стойности."
+            instance: "/api/rooms"
+            errors:
+              capacity: ["Капацитетът трябва да е поне 1."]
+              name: ["Полето 'name' е задължително."]
+
+    Unauthorized:
+      description: Липсващ или невалиден JWT токен
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: "https://tools.ietf.org/html/rfc7235#section-3.1"
+            title: "Неоторизиран достъп"
+            status: 401
+            detail: "JWT токенът липсва, е изтекъл или е невалиден."
+            instance: "/api/rooms"
+
+    Forbidden:
+      description: Нямате права за тази операция
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: "https://tools.ietf.org/html/rfc7231#section-6.5.3"
+            title: "Забранен достъп"
+            status: 403
+            detail: "Само администратори могат да извършат тази операция."
+            instance: "/api/rooms"
+
+    NotFound:
+      description: Ресурсът не е намерен
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: "https://tools.ietf.org/html/rfc7231#section-6.5.4"
+            title: "Не е намерено"
+            status: 404
+            detail: "Ресурсът с посоченото ID не съществува."
+            instance: "/api/rooms/999"
+
+    InternalServerError:
+      description: Вътрешна сървърна грешка
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+          example:
+            type: "https://tools.ietf.org/html/rfc7231#section-6.6.1"
+            title: "Вътрешна сървърна грешка"
+            status: 500
+            detail: "Възникна неочаквана грешка. Моля, опитайте отново по-късно."
+            instance: "/api/rooms"
+
+  # -----------------------------------
+  # Schemas
+  # -----------------------------------
+  schemas:
+    # --- ENUMS ---
+
+    UserRole:
+      type: string
+      enum: [Student, Teacher, Admin]
+      description: |
+        Роля на потребителя:
+        - `Student` — студент
+        - `Teacher` — преподавател
+        - `Admin` — системен администратор
+
+    RegistrationRole:
+      type: string
+      enum: [Student, Teacher]
+      description: |
+        Роля при самостоятелна регистрация.
+        Ролята `Admin` не може да се избира тук — Admin акаунти
+        се създават само от администратор чрез `POST /api/users`:
+        - `Student` — студент
+        - `Teacher` — преподавател
+
+    RoomType:
+      type: string
+      enum: [Lecture, Lab, Seminar, ComputerLab]
+      description: |
+        Тип на учебната зала:
+        - `Lecture` — лекционна зала
+        - `Lab` — лаборатория
+        - `Seminar` — семинарна зала
+        - `ComputerLab` — компютърна зала
+
+    ReservationStatus:
+      type: string
+      enum: [Pending, Approved, Rejected, Cancelled]
+      description: |
+        Статус на резервацията:
+        - `Pending` — изчаква одобрение от администратор
+        - `Approved` — одобрена от администратор
+        - `Rejected` — отхвърлена от администратор
+        - `Cancelled` — отменена от потребителя
+
+    # --- AUTH ---
+
+    RegisterRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - password
+        - role
+      properties:
+        firstName:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: Собствено име
+          example: "Иван"
+        lastName:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: Фамилно име
+          example: "Иванов"
+        email:
+          type: string
+          format: email
+          maxLength: 100
+          description: Email адрес — трябва да е уникален в системата
+          example: "ivan.ivanov@uni.bg"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 100
+          description: Парола — минимум 8 символа
+          example: "P@ssw0rd123"
+        role:
+          $ref: "#/components/schemas/RegistrationRole"
+        facultyNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Факултетен номер — задължителен за студенти
+          example: "MI2024123"
+        phoneNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Телефонен номер
+          example: "+359 88 123 4567"
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 100
+          description: Регистриран email адрес
+          example: "ivan.ivanov@uni.bg"
+        password:
+          type: string
+          minLength: 8
+          description: Парола
+          example: "P@ssw0rd123"
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT Bearer токен за последващи заявки
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expiresAt:
+          type: string
+          format: date-time
+          description: Дата и час на изтичане на токена (24 часа след издаването)
+          example: "2026-06-16T14:30:00Z"
+        user:
+          $ref: "#/components/schemas/UserResponse"
+
+    # --- USERS ---
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: Уникален идентификатор
+          example: 1
+        firstName:
+          type: string
+          maxLength: 50
+          description: Собствено име
+          example: "Иван"
+        lastName:
+          type: string
+          maxLength: 50
+          description: Фамилно име
+          example: "Иванов"
+        email:
+          type: string
+          format: email
+          maxLength: 100
+          description: Email адрес
+          example: "ivan.ivanov@uni.bg"
+        role:
+          $ref: "#/components/schemas/UserRole"
+        facultyNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Факултетен номер
+          example: "MI2024123"
+        phoneNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Телефонен номер
+          example: "+359 88 123 4567"
+        isActive:
+          type: boolean
+          description: Дали акаунтът е активен
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Дата и час на създаване на акаунта
+          example: "2026-09-01T10:00:00Z"
+
+    CreateUserRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - password
+        - role
+      properties:
+        firstName:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: Собствено име
+        lastName:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: Фамилно име
+        email:
+          type: string
+          format: email
+          maxLength: 100
+          description: Email адрес
+        password:
+          type: string
+          minLength: 8
+          maxLength: 100
+          description: Начална парола
+        role:
+          $ref: "#/components/schemas/UserRole"
+        facultyNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Факултетен номер
+        phoneNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Телефонен номер
+
+    UpdateUserRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - isActive
+      properties:
+        firstName:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: Собствено име
+        lastName:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: Фамилно име
+        facultyNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Факултетен номер
+        phoneNumber:
+          type: string
+          maxLength: 20
+          nullable: true
+          description: Телефонен номер
+        isActive:
+          type: boolean
+          description: Активност на акаунта
+
+    PagedUsersResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserResponse"
+          description: Списък с потребители на текущата страница
+        totalCount:
+          type: integer
+          description: Общ брой потребители (преди пагинация)
+          example: 47
+        page:
+          type: integer
+          description: Номер на текущата страница
+          example: 1
+        pageSize:
+          type: integer
+          description: Брой елементи на страница
+          example: 10
+        totalPages:
+          type: integer
+          description: Общ брой страници
+          example: 5
+
+    # --- ROOMS ---
+
+    RoomResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: Уникален идентификатор
+          example: 3
+        name:
+          type: string
+          maxLength: 50
+          description: Наименование на залата
+          example: "А201"
+        building:
+          type: string
+          maxLength: 100
+          description: Сграда/корпус
+          example: "Корпус А"
+        floor:
+          type: integer
+          description: Етаж (0 = приземен)
+          example: 2
+        capacity:
+          type: integer
+          description: Максимален брой места
+          example: 120
+        roomType:
+          $ref: "#/components/schemas/RoomType"
+        hasProjector:
+          type: boolean
+          description: Дали залата разполага с проектор
+          example: true
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Допълнително описание
+          example: "Голяма аудитория с климатик и бяла дъска"
+        isActive:
+          type: boolean
+          description: Дали залата е налична за резервации
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Дата и час на добавяне в системата
+          example: "2026-01-15T08:00:00Z"
+
+    CreateRoomRequest:
+      type: object
+      required:
+        - name
+        - building
+        - floor
+        - capacity
+        - roomType
+        - hasProjector
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: Наименование на залата
+          example: "А201"
+        building:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Сграда/корпус
+          example: "Корпус А"
+        floor:
+          type: integer
+          description: Етаж (0 за приземен, отрицателни стойности за сутерен)
+          example: 2
+        capacity:
+          type: integer
+          minimum: 1
+          description: Максимален брой места
+          example: 120
+        roomType:
+          $ref: "#/components/schemas/RoomType"
+        hasProjector:
+          type: boolean
+          description: Дали залата разполага с проектор
+          example: true
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Допълнително описание (не е задължително)
+          example: "Голяма аудитория с климатик"
+
+    UpdateRoomRequest:
+      type: object
+      required:
+        - name
+        - building
+        - floor
+        - capacity
+        - roomType
+        - hasProjector
+        - isActive
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: Наименование на залата
+        building:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Сграда/корпус
+        floor:
+          type: integer
+          description: Етаж
+        capacity:
+          type: integer
+          minimum: 1
+          description: Максимален брой места
+        roomType:
+          $ref: "#/components/schemas/RoomType"
+        hasProjector:
+          type: boolean
+          description: Дали залата разполага с проектор
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Допълнително описание
+        isActive:
+          type: boolean
+          description: Дали залата е налична за резервации
+
+    PagedRoomsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomResponse"
+          description: Списък с учебни зали на текущата страница
+        totalCount:
+          type: integer
+          description: Общ брой зали (преди пагинация)
+          example: 23
+        page:
+          type: integer
+          description: Номер на текущата страница
+          example: 1
+        pageSize:
+          type: integer
+          description: Брой елементи на страница
+          example: 10
+        totalPages:
+          type: integer
+          description: Общ брой страници
+          example: 3
+
+    # --- RESERVATIONS ---
+
+    ReservationResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          description: Уникален идентификатор
+          example: 15
+        room:
+          $ref: "#/components/schemas/RoomResponse"
+        user:
+          $ref: "#/components/schemas/UserResponse"
+        startTime:
+          type: string
+          format: date-time
+          description: Начало на резервацията
+          example: "2026-06-15T09:00:00Z"
+        endTime:
+          type: string
+          format: date-time
+          description: Край на резервацията
+          example: "2026-06-15T11:00:00Z"
+        purpose:
+          type: string
+          maxLength: 200
+          description: Цел на резервацията
+          example: "Групова работа по проект"
+        status:
+          $ref: "#/components/schemas/ReservationStatus"
+        notes:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Допълнителни бележки (от потребителя или администратора)
+          example: "Нуждаем се от проектор"
+        attendeeCount:
+          type: integer
+          description: Очакван брой присъстващи
+          example: 25
+        createdAt:
+          type: string
+          format: date-time
+          description: Дата и час на създаване на резервацията
+          example: "2026-05-08T14:30:00Z"
+
+    CreateReservationRequest:
+      type: object
+      required:
+        - roomId
+        - startTime
+        - endTime
+        - purpose
+        - attendeeCount
+      properties:
+        roomId:
+          type: integer
+          format: int32
+          minimum: 1
+          description: ID на учебната зала
+          example: 3
+        startTime:
+          type: string
+          format: date-time
+          description: |
+            Начало на резервацията.
+            Трябва да е в бъдещето.
+          example: "2026-06-15T09:00:00"
+        endTime:
+          type: string
+          format: date-time
+          description: |
+            Край на резервацията.
+            Трябва да е след `startTime`.
+          example: "2026-06-15T11:00:00"
+        purpose:
+          type: string
+          minLength: 5
+          maxLength: 200
+          description: Цел на резервацията
+          example: "Групова работа по проект Разпределени Приложения"
+        notes:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Допълнителни бележки (не е задължително)
+          example: "Нуждаем се от проектор"
+        attendeeCount:
+          type: integer
+          minimum: 1
+          description: |
+            Очакван брой присъстващи.
+            Не може да надвишава капацитета на залата.
+          example: 25
+
+    UpdateReservationRequest:
+      type: object
+      required:
+        - startTime
+        - endTime
+        - purpose
+        - attendeeCount
+      properties:
+        startTime:
+          type: string
+          format: date-time
+          description: Ново начало на резервацията (трябва да е в бъдещето)
+          example: "2026-06-15T10:00:00"
+        endTime:
+          type: string
+          format: date-time
+          description: Нов край на резервацията (трябва да е след `startTime`)
+          example: "2026-06-15T12:00:00"
+        purpose:
+          type: string
+          minLength: 5
+          maxLength: 200
+          description: Цел на резервацията
+          example: "Изпит по Разпределени Приложения"
+        notes:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Допълнителни бележки
+        attendeeCount:
+          type: integer
+          minimum: 1
+          description: Очакван брой присъстващи
+          example: 30
+
+    UpdateReservationStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [Approved, Rejected]
+          description: Новият статус — само `Approved` или `Rejected`
+          example: "Approved"
+        notes:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Бележка от администратора (причина за решението)
+          example: "Одобрено. Моля, освободете залата навреме."
+
+    PagedReservationsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReservationResponse"
+          description: Списък с резервации на текущата страница
+        totalCount:
+          type: integer
+          description: Общ брой резервации (преди пагинация)
+          example: 134
+        page:
+          type: integer
+          description: Номер на текущата страница
+          example: 1
+        pageSize:
+          type: integer
+          description: Брой елементи на страница
+          example: 10
+        totalPages:
+          type: integer
+          description: Общ брой страници
+          example: 14
+
+    # --- ERROR HANDLING (RFC 7807) ---
+
+    ProblemDetails:
+      type: object
+      description: |
+        Стандартизиран отговор за грешки по стандарта **RFC 7807 (Problem Details for HTTP APIs)**.
+        Всички грешки в системата се връщат в този формат — сървърни stack traces никога не се
+        разкриват към клиента.
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI, описващ типа на грешката
+          example: "https://tools.ietf.org/html/rfc7231#section-6.5.1"
+        title:
+          type: string
+          description: Кратко, разбираемо описание на грешката
+          example: "Невалидни входни данни"
+        status:
+          type: integer
+          description: HTTP статус код
+          example: 400
+        detail:
+          type: string
+          description: Подробно описание на конкретната грешка
+          example: "Полето 'email' трябва да е валиден email адрес."
+        instance:
+          type: string
+          format: uri
+          description: Endpoint, при който е възникнала грешката
+          example: "/api/users"
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: |
+            Речник с валидационни грешки по конкретни полета.
+            Присъства само при статус 400 (validation errors).
+          example:
+            email: ["Полето 'email' е задължително."]
+            firstName: ["Максималната дължина е 50 символа."]
