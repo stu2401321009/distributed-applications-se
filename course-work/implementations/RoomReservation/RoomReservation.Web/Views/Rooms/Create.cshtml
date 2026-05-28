@@ -1,0 +1,54 @@
+@model RoomReservation.Web.Models.CreateRoomFormModel
+@{ ViewData["Title"] = "Добави зала"; Layout = "~/Views/Shared/_Layout.cshtml"; }
+
+<h2 class="mb-4"><i class="bi bi-plus-circle"></i> Добави нова зала</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        @if (Model.ErrorMessage != null)
+        {
+            <div class="alert alert-danger">@Model.ErrorMessage</div>
+        }
+        <form method="post">
+            <div class="mb-3">
+                <label class="form-label">Наименование</label>
+                <input name="Name" value="@Model.Name" class="form-control" required maxlength="50" placeholder="А201" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Сграда</label>
+                <input name="Building" value="@Model.Building" class="form-control" required maxlength="100" placeholder="напр. ФМИ, Педагогически факултет" />
+            </div>
+            <div class="row">
+                <div class="col mb-3">
+                    <label class="form-label">Етаж</label>
+                    <input type="number" name="Floor" value="@Model.Floor" class="form-control" required min="0" />
+                </div>
+                <div class="col mb-3">
+                    <label class="form-label">Капацитет</label>
+                    <input type="number" name="Capacity" value="@Model.Capacity" class="form-control" required min="1" />
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Тип зала</label>
+                <select name="RoomType" class="form-select">
+                    @foreach (var (val, label) in new[] { ("Lecture","Лекционна зала"), ("Lab","Лаборатория"), ("Seminar","Семинарна зала"), ("ComputerLab","Компютърна лаборатория") })
+                    {
+                        <option value="@val" selected="@(Model.RoomType == val)">@label</option>
+                    }
+                </select>
+            </div>
+            <div class="mb-3 form-check">
+                <input type="checkbox" name="HasProjector" id="proj" class="form-check-input" value="true" checked="@Model.HasProjector" />
+                <label for="proj" class="form-check-label">Има проектор</label>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Описание <small class="text-muted">(по избор)</small></label>
+                <textarea name="Description" class="form-control" rows="3" maxlength="500">@Model.Description</textarea>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-success">Запази</button>
+                <a asp-action="Index" class="btn btn-outline-secondary">Отказ</a>
+            </div>
+        </form>
+    </div>
+</div>

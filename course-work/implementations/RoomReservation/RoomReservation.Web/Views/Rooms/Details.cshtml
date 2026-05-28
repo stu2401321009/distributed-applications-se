@@ -1,0 +1,40 @@
+@model RoomReservation.Web.Models.RoomViewModel
+@{ ViewData["Title"] = Model.Name; Layout = "~/Views/Shared/_Layout.cshtml"; }
+
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-action="Index">Зали</a></li>
+        <li class="breadcrumb-item active">@Model.Name</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <div class="col-md-7">
+        <h2>@Model.Name</h2>
+        <table class="table table-bordered">
+            <tr><th>Сграда</th><td>@Model.Building</td></tr>
+            <tr><th>Етаж</th><td>@Model.Floor</td></tr>
+            <tr><th>Капацитет</th><td>@Model.Capacity места</td></tr>
+            <tr><th>Тип</th><td>@(Model.RoomType switch { "Lecture" => "Лекционна зала", "Lab" => "Лаборатория", "Seminar" => "Семинарна зала", "ComputerLab" => "Компютърна лаборатория", _ => Model.RoomType })</td></tr>
+            <tr><th>Проектор</th><td>@(Model.HasProjector ? "✅ Да" : "❌ Не")</td></tr>
+            @if (Model.Description != null)
+            {
+                <tr><th>Описание</th><td>@Model.Description</td></tr>
+            }
+        </table>
+        <div class="d-flex gap-2 mt-3">
+            <a asp-controller="Reservations" asp-action="Create" asp-route-roomId="@Model.Id" class="btn btn-success">
+                <i class="bi bi-calendar-plus"></i> Резервирай тази зала
+            </a>
+            @if (ViewBag.IsAdmin == true)
+            {
+                <a asp-action="Edit" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                    <i class="bi bi-pencil"></i> Редактирай
+                </a>
+                <form method="post" asp-action="Delete" asp-route-id="@Model.Id" onsubmit="return confirm('Сигурен ли си?')">
+                    <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> Деактивирай</button>
+                </form>
+            }
+        </div>
+    </div>
+</div>

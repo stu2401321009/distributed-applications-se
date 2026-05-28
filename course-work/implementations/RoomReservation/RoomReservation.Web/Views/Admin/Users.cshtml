@@ -1,0 +1,90 @@
+@model RoomReservation.Web.Models.PagedViewModel<RoomReservation.Web.Models.UserViewModel>
+@{ ViewData["Title"] = "Потребители"; Layout = "~/Views/Shared/_Layout.cshtml"; }
+
+<h2 class="mb-4"><i class="bi bi-people"></i> Потребители</h2>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-2">
+        <input name="firstName" value="@ViewBag.FirstName" class="form-control" placeholder="Собствено..." />
+    </div>
+    <div class="col-md-2">
+        <input name="lastName" value="@ViewBag.LastName" class="form-control" placeholder="Фамилия..." />
+    </div>
+    <div class="col-md-2">
+        <select name="role" class="form-select">
+            <option value="">Всички роли</option>
+            @foreach (var r in new[] { "Admin", "Teacher", "Student" })
+            {
+                <option value="@r" selected="@(ViewBag.Role == r)">@r</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-outline-primary w-100">Търси</button>
+    </div>
+</form>
+
+@if (Model == null || !Model.Items.Any())
+{
+    <div class="alert alert-info">Няма намерени потребители.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Име</th>
+                    <th>Email</th>
+                    <th>Роля</th>
+                    <th>Факултетен №</th>
+                    <th>Статус</th>
+                    <th>Регистрация</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Model.Items)
+                {
+                    <tr>
+                        <td>@u.Id</td>
+                        <td>@u.FullName</td>
+                        <td>@u.Email</td>
+                        <td>
+                            @{
+                                var roleClass = u.Role switch { "Admin" => "bg-danger", "Teacher" => "bg-primary", _ => "bg-secondary" };
+                            }
+                            <span class="badge @roleClass">@u.Role</span>
+                        </td>
+                        <td>@(u.FacultyNumber ?? "—")</td>
+                        <td>
+                            @if (u.IsActive)
+                            {
+                                <span class="badge bg-success">Активен</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Неактивен</span>
+                            }
+                        </td>
+                        <td>@u.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav>
+            <ul class="pagination justify-content-center">
+                @for (int i = 1; i <= Model.TotalPages; i++)
+                {
+                    <li class="page-item @(i == Model.Page ? "active" : "")">
+                        <a class="page-link" asp-action="Users" asp-route-page="@i" asp-route-role="@ViewBag.Role">@i</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+}

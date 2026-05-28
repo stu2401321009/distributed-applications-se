@@ -1,0 +1,102 @@
+@model RoomReservation.Web.Models.PagedViewModel<RoomReservation.Web.Models.ReservationViewModel>
+@{ ViewData["Title"] = ViewBag.IsAdmin == true ? "Всички резервации" : "Моите резервации"; Layout = "~/Views/Shared/_Layout.cshtml"; }
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-calendar-check"></i> @ViewData["Title"]</h2>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+    <div class="col-md-3">
+        <select name="status" class="form-select">
+            <option value="">Всички статуси</option>
+            @foreach (var s in new[] { "Pending", "Approved", "Rejected", "Cancelled" })
+            {
+                <option value="@s" selected="@(ViewBag.Status == s)">@s</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-outline-primary w-100"><i class="bi bi-filter"></i> Филтрирай</button>
+    </div>
+</form>
+
+@if (!Model.Items.Any())
+{
+    <div class="alert alert-info">Няма резервации.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Зала</th>
+                    @if (ViewBag.IsAdmin == true) { <th>Потребител</th> }
+                    <th>Начало</th>
+                    <th>Край</th>
+                    <th>Цел</th>
+                    <th>Статус</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Model.Items)
+                {
+                    <tr>
+                        <td>@r.Id</td>
+                        <td>@r.Room?.Name</td>
+                        @if (ViewBag.IsAdmin == true) { <td>@r.User?.FullName</td> }
+                        <td>@r.StartTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                        <td>@r.EndTime.ToLocalTime().ToString("HH:mm")</td>
+                        <td>@r.Purpose</td>
+                        <td>
+                            @{
+                                var badgeClass = r.Status switch
+                                {
+                                    "Pending"   => "bg-warning text-dark",
+                                    "Approved"  => "bg-success",
+                                    "Rejected"  => "bg-danger",
+                                    _           => "bg-secondary"
+                                };
+                            }
+                            <span class="badge @badgeClass">@r.Status</span>
+                        </td>
+                        <td>
+                            <a asp-action="Details" asp-route-id="@r.Id" class="btn btn-sm btn-outline-primary">Детайли</a>
+                            @if (r.Status == "Pending")
+                            {
+                                <form method="post" asp-action="Cancel" asp-route-id="@r.Id" class="d-inline" onsubmit="return confirm('Отмени резервацията?')">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Отмени</button>
+                                </form>
+                            }
+                            @if (ViewBag.IsAdmin == true && r.Status == "Pending")
+                            {
+                                <form method="post" asp-action="Approve" asp-route-id="@r.Id" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-success">✓ Одобри</button>
+                                </form>
+                                <form method="post" asp-action="Reject" asp-route-id="@r.Id" class="d-inline" onsubmit="return confirm('Отхвърли резервацията?')">
+                                    <button type="submit" class="btn btn-sm btn-danger">✗ Откажи</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav>
+            <ul class="pagination justify-content-center">
+                @for (int i = 1; i <= Model.TotalPages; i++)
+                {
+                    <li class="page-item @(i == Model.Page ? "active" : "")">
+                        <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-status="@ViewBag.Status">@i</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+}

@@ -1,0 +1,68 @@
+@model IEnumerable<RoomReservation.Web.Models.RoomViewModel>?
+@{ ViewData["Title"] = "Намери свободна зала"; Layout = "~/Views/Shared/_Layout.cshtml"; }
+
+<h2 class="mb-4"><i class="bi bi-search"></i> Намери свободна зала</h2>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Дата</label>
+                <input type="date" name="date" value="@ViewBag.Date" class="form-control" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">От час</label>
+                <input type="time" name="startTime" value="@ViewBag.StartTime" class="form-control" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">До час</label>
+                <input type="time" name="endTime" value="@ViewBag.EndTime" class="form-control" required />
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Мин. капацитет</label>
+                <input type="number" name="minCapacity" value="@ViewBag.MinCapacity" class="form-control" min="1" placeholder="напр. 30" />
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> Търси</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (ViewBag.Error != null)
+{
+    <div class="alert alert-danger">@ViewBag.Error</div>
+}
+else if (Model != null)
+{
+    if (!Model.Any())
+    {
+        <div class="alert alert-warning">Няма свободни зали за избрания период.</div>
+    }
+    else
+    {
+        <h5 class="mb-3 text-success">Намерени @Model.Count() свободни зали:</h5>
+        <div class="row row-cols-1 row-cols-md-3 g-3">
+            @foreach (var room in Model)
+            {
+                <div class="col">
+                    <div class="card h-100 shadow-sm border-success">
+                        <div class="card-body">
+                            <h5 class="card-title text-success">@room.Name</h5>
+                            <p class="mb-1 text-muted"><i class="bi bi-geo-alt"></i> @room.Building, ет. @room.Floor</p>
+                            <p class="mb-1"><i class="bi bi-people"></i> @room.Capacity места</p>
+                            <p class="mb-1"><i class="bi bi-tag"></i> @(room.RoomType switch { "Lecture" => "Лекционна зала", "Lab" => "Лаборатория", "Seminar" => "Семинарна зала", "ComputerLab" => "Компютърна лаборатория", _ => room.RoomType })</p>
+                        </div>
+                        <div class="card-footer">
+                            <a asp-controller="Reservations" asp-action="Create"
+                               asp-route-roomId="@room.Id"
+                               class="btn btn-success w-100">
+                                <i class="bi bi-calendar-plus"></i> Резервирай
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}

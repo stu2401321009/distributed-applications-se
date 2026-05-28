@@ -1,0 +1,83 @@
+@model RoomReservation.Web.Models.PagedViewModel<RoomReservation.Web.Models.RoomViewModel>
+@{ ViewData["Title"] = "Зали"; Layout = "~/Views/Shared/_Layout.cshtml"; }
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2><i class="bi bi-building"></i> Учебни зали</h2>
+        <p class="text-muted mb-0">Пловдивски университет „Паисий Хилендарски“</p>
+    </div>
+    @if (ViewBag.IsAdmin == true)
+    {
+        <a asp-action="Create" class="btn btn-success"><i class="bi bi-plus-circle"></i> Добави зала</a>
+    }
+</div>
+
+<form method="get" class="row g-2 mb-4">
+    <div class="col-md-4">
+        <input name="building" value="@ViewBag.Building" class="form-control" placeholder="Факултет / сграда..." />
+    </div>
+    <div class="col-md-3">
+        <select name="roomType" class="form-select">
+            <option value="">Всички типове</option>
+            @foreach (var (val, label) in new[] { ("Lecture","Лекционна зала"), ("Lab","Лаборатория"), ("Seminar","Семинарна зала"), ("ComputerLab","Компютърна лаборатория") })
+            {
+                <option value="@val" selected="@(ViewBag.RoomType == val)">@label</option>
+            }
+        </select>
+    </div>
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-outline-primary w-100"><i class="bi bi-search"></i> Търси</button>
+    </div>
+    <div class="col-md-3 text-end">
+        <a asp-action="Available" class="btn btn-outline-success w-100"><i class="bi bi-calendar-check"></i> Намери свободна</a>
+    </div>
+</form>
+
+@if (!Model.Items.Any())
+{
+    <div class="alert alert-info">Няма намерени зали.</div>
+}
+else
+{
+    <div class="row row-cols-1 row-cols-md-3 g-3">
+        @foreach (var room in Model.Items)
+        {
+            <div class="col">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">@room.Name</h5>
+                        <p class="text-muted mb-1"><i class="bi bi-geo-alt"></i> @room.Building, ет. @room.Floor</p>
+                        <p class="mb-1"><i class="bi bi-people"></i> Капацитет: <strong>@room.Capacity</strong> места</p>
+                        <p class="mb-1"><i class="bi bi-tag"></i> @(room.RoomType switch { "Lecture" => "Лекционна зала", "Lab" => "Лаборатория", "Seminar" => "Семинарна зала", "ComputerLab" => "Компютърна лаборатория", _ => room.RoomType })</p>
+                        @if (room.HasProjector)
+                        {
+                            <span class="badge bg-info text-dark"><i class="bi bi-projector"></i> Проектор</span>
+                        }
+                    </div>
+                    <div class="card-footer d-flex gap-2">
+                        <a asp-action="Details" asp-route-id="@room.Id" class="btn btn-sm btn-primary flex-fill">Детайли</a>
+                        <a asp-controller="Reservations" asp-action="Create" asp-route-roomId="@room.Id" class="btn btn-sm btn-success flex-fill">Резервирай</a>
+                        @if (ViewBag.IsAdmin == true)
+                        {
+                            <a asp-action="Edit" asp-route-id="@room.Id" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav class="mt-4">
+            <ul class="pagination justify-content-center">
+                @for (int i = 1; i <= Model.TotalPages; i++)
+                {
+                    <li class="page-item @(i == Model.Page ? "active" : "")">
+                        <a class="page-link" asp-action="Index" asp-route-page="@i" asp-route-building="@ViewBag.Building" asp-route-roomType="@ViewBag.RoomType">@i</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+}

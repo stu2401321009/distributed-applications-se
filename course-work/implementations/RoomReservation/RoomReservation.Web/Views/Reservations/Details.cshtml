@@ -1,0 +1,51 @@
+@model RoomReservation.Web.Models.ReservationViewModel
+@{ ViewData["Title"] = "Детайли за резервация"; Layout = "~/Views/Shared/_Layout.cshtml"; }
+
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a asp-action="My">Моите резервации</a></li>
+        <li class="breadcrumb-item active">Резервация #@Model.Id</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <div class="col-md-6">
+        <h3>Резервация #@Model.Id</h3>
+        @{
+            var bc = Model.Status switch { "Pending" => "bg-warning text-dark", "Approved" => "bg-success", "Rejected" => "bg-danger", _ => "bg-secondary" };
+        }
+        <span class="badge @bc fs-6 mb-3">@Model.Status</span>
+        <table class="table table-bordered">
+            <tr><th>Зала</th><td>@Model.Room?.Name</td></tr>
+            <tr><th>Потребител</th><td>@Model.User?.FullName</td></tr>
+            <tr><th>Начало</th><td>@Model.StartTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td></tr>
+            <tr><th>Край</th><td>@Model.EndTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td></tr>
+            <tr><th>Цел</th><td>@Model.Purpose</td></tr>
+            <tr><th>Участници</th><td>@Model.AttendeeCount</td></tr>
+            @if (Model.Notes != null)
+            {
+                <tr><th>Бележки</th><td>@Model.Notes</td></tr>
+            }
+            <tr><th>Заявена на</th><td>@Model.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td></tr>
+        </table>
+
+        <div class="d-flex gap-2">
+            @if (Model.Status == "Pending")
+            {
+                <form method="post" asp-action="Cancel" asp-route-id="@Model.Id" onsubmit="return confirm('Отмени?')">
+                    <button class="btn btn-outline-danger">Отмени резервацията</button>
+                </form>
+            }
+            @if (ViewBag.IsAdmin == true && Model.Status == "Pending")
+            {
+                <form method="post" asp-action="Approve" asp-route-id="@Model.Id">
+                    <button class="btn btn-success">✓ Одобри</button>
+                </form>
+                <form method="post" asp-action="Reject" asp-route-id="@Model.Id" onsubmit="return confirm('Отхвърли?')">
+                    <button class="btn btn-danger">✗ Откажи</button>
+                </form>
+            }
+            <a asp-action="My" class="btn btn-outline-secondary ms-auto">Назад</a>
+        </div>
+    </div>
+</div>
